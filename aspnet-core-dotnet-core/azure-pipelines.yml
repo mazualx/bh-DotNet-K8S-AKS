@@ -1,0 +1,126 @@
+# Trigger this pipeline on all branches
+trigger:
+  batch: true
+  branches:
+    include:
+    - "*"
+
+# Run on the latest ubuntu instance
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # This is the name of the service connection to the container registry
+  # you defined earlier.
+  CONTAINER_REGISTRY_STRING: ConnectionName
+  # This string is the repository name you want your image to have
+  # you can specify any name, and it will be created in the registry.
+  CONTAINER_REPOSITORY_STRING: Repo
+
+stages:
+  # This stage runs the "dotnet test" command
+  - stage: Building
+    displayName: Building the app
+    jobs:
+    - job: Building
+      displayName: "Building the app"
+      steps:
+      - task: DotNetCoreCLI@2
+        displayName: ".NET build"
+        inputs:
+          command: "build"  
+  
+  - stage: Testing
+    displayName: Testing the code
+    jobs:
+    - job: RunTests
+      displayName: "Running the tests"
+      steps:
+      - task: DotNetCoreCLI@2
+        displayName: ".NET Tests"
+        inputs:
+          command: "test"
+    
+    # This stage builds the docker image, and publishes it to
+    # Azure Container Registry
+  - stage: BuildAndPush
+    displayName: "Build and Push docker to ACR"
+    dependsOn: Testing
+    # This only runs the task if we're on the main branch, and we've succeeded so far
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: BuildImageAndPush
+        steps:
+        - task: DotNetCoreCLI@2
+          displayName: "Publish"
+          inputs:
+            command: "publish"
+            zipAfterPublish: false
+            arguments: '--configuration release --output aspnet-core-dotnet-core'
+        - task: Docker@2
+          displayName: Build docker image
+          inputs:
+            command: buildAndPush
+            containerRegistry: $(CONTAINER_REGISTRY_STRING)
+            repository: $(CONTAINER_REPOSITORY_STRING)
+            tags: |
+              $(Build.BuildId)
+              latest
+  - stage: DevDeploy
+    displayName: "Deploy to Dev"
+    dependsOn: BuildAndPush
+    jobs:
+    - job: Deploy
+      steps:
+      - task: KubernetesManifest@0
+        displayName: Deploy to Kubernetes cluster
+        inputs:
+          action: deploy
+          kubernetesServiceConnection: K8SConnectionDev #This is the serviceConnection to Dev namespace that needs to be defined at ADO level
+          namespace: dev
+          manifests: aspnet-core-dotnet-core/manifests/*
+
+  - stage: TestDeploy
+    displayName: "Deploy to Test"
+    dependsOn: DevDeploy
+    condition: eq(variables['Build.Reason'], 'Manual')
+    jobs:
+    - job: Deploy
+      steps:
+      - task: KubernetesManifest@0
+        displayName: Deploy to Kubernetes cluster
+        inputs:
+          action: deploy
+          kubernetesServiceConnection: K8SConnectionTest #This is the serviceConnection to Test namespace
+          namespace: test
+          manifests: aspnet-core-dotnet-core/manifests/*
+
+  - stage: UATDeploy
+    displayName: "Deploy to UAT"
+    dependsOn: TestDeploy
+    condition: eq(variables['Build.Reason'], 'Manual')
+    jobs:
+    - job: Deploy
+      steps:
+      - task: KubernetesManifest@0
+        displayName: Deploy to Kubernetes cluster
+        inputs:
+          action: deploy
+          kubernetesServiceConnection: K8SConnectionUAT #This is the serviceConnection to UAT namespace
+          namespace: uat
+          manifests: aspnet-core-dotnet-core/manifests/*
+
+  - stage: ProdDeploy
+    displayName: "Deploy to Prod"
+    dependsOn: UATDeploy
+    condition: eq(variables['Build.Reason'], 'Manual')
+    jobs:
+    - job: Deploy
+      steps:
+      - task: KubernetesManifest@0
+        displayName: Deploy to Kubernetes cluster
+        inputs:
+          action: deploy
+          kubernetesServiceConnection: K8SConnectionProd #This is the serviceConnection to Prod namespace
+          namespace: prod
+          manifests: aspnet-core-dotnet-core/manifests/*

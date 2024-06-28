@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aspdotnet
+  labels:
+    app: aspdotnet
+spec: 
+  replicas: 1
+  template:
+    metadata:
+      name: aspdotnet
+      labels:
+        app: aspdotnet
+    spec:
+      containers:
+        - name: frontend-container
+          image: blueharvestcontainer.azurecr.io/blueharvestrepo:latest
+  selector:
+    matchLabels: 
+      app: aspdotnet
