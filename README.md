@@ -12,8 +12,10 @@ Sample ASP.NET Core MVC application.
 This is the documentation for the DevOps assignment.
 
 In order to create the infrastructure, I have used terraform scripts that can be found in aspnet-core-dotnet-core/infra folder. 
-Note: you need to add: appdid, principalId, secretId in the variables.tf file.
-You also need to add a unique name for the ACR repo on the AKS.tf file.
+
+Note: 
+* You need to add: appdid, principalId, secretId in the variables.tf file.
+* You also need to add a unique name for the ACR repo on the AKS.tf file.
 
 Once these are populated, simply run terraform init && terraform apply, and the infrastructure should ne completed.
 
